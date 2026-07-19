@@ -1,0 +1,9 @@
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "nixpacksPlan": {
+      "providers": ["python"],
+      "pkgs": ["python310", "ffmpeg"]
+    }
+  }
+}
