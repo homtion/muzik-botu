@@ -6,6 +6,12 @@ import discord
 from discord.ext import commands
 import yt_dlp
 
+# Ses kütüphanesini (PyNaCl) zorla yükletmek ve entegre etmek için en üste ekliyoruz
+try:
+    import nacl
+except ImportError:
+    pass
+
 # --- WINDOWS / LINUX UYUMLULUĞU ---
 ffmpeg_bin_path = r'C:\ffmpeg\bin'
 if os.path.exists(ffmpeg_bin_path):
@@ -137,7 +143,8 @@ async def help_command(interaction: discord.Interaction):
 async def play(interaction: discord.Interaction, şarkı: str):
     global current_song
     
-    await interaction.response.defer()
+    # Zaman aşımını önlemek için en başta defer ediyoruz
+    await interaction.response.defer(ephemeral=False, thinking=True)
     
     if not interaction.user.voice:
         await interaction.followup.send("Ses kanalına katıl!")
@@ -166,15 +173,18 @@ async def play(interaction: discord.Interaction, şarkı: str):
         embed = discord.Embed(title="Şarkı Listeye Eklendi", description=title, color=discord.Color.green())
         await msg.edit(embed=embed)
         
-        if not voice.is_playing():
-            await play_next(voice, interaction)
+        if not voice.is_playing() and not voice.is_paused():
+            await play_next(voice, interaction.channel, interaction.user)
     except Exception as e:
         embed = discord.Embed(title="Hata", description=str(e)[:100], color=discord.Color.red())
         await msg.edit(embed=embed)
 
-async def play_next(voice, interaction):
+async def play_next(voice, text_channel, user):
     global current_song
     
+    if not voice or not voice.is_connected():
+        return
+
     if queue:
         url, title = queue.popleft()
         current_song = title
@@ -188,14 +198,16 @@ async def play_next(voice, interaction):
         )
         source = discord.PCMVolumeTransformer(raw_source, volume=volume)
         
-        voice.play(source, after=lambda e: bot.loop.create_task(play_next(voice, interaction)))
+        # Döngüyü güvenli tetiklemek için kanal verilerini paslıyoruz
+        voice.play(source, after=lambda e: bot.loop.create_task(play_next(voice, text_channel, user)))
         
         embed = discord.Embed(title="MÜZIK PANELİ", description=title, color=discord.Color.purple())
-        embed.add_field(name="İstek Sahibi", value=interaction.user.mention, inline=True)
+        embed.add_field(name="İstek Sahibi", value=user.mention, inline=True)
         embed.add_field(name="Şarkı Listesi", value=f"{len(queue)} şarkı", inline=True)
         
-        view = MusicButtons(interaction.user.id)
-        await interaction.followup.send(embed=embed, view=view)
+        view = MusicButtons(user.id)
+        # followup yerine doğrudan metin kanalına gönderiyoruz (zaman aşımı yemez)
+        await text_channel.send(embed=embed, view=view)
 
 @bot.tree.command(name="pause", description="Müziği duraklat")
 async def pause(interaction: discord.Interaction):
